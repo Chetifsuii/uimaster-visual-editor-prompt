@@ -1,0 +1,311 @@
+@import "tailwindcss";
+
+/* ============================================================================
+   Anthropic-inspired theme
+   ----------------------------------------------------------------------------
+   Two palettes — "ivory" (default, the warm light look) and "slate" (warm dark)
+   — switched at runtime by `data-theme` on <html>.
+
+   The mechanism matters more than the hexes. There are ~450 colour utilities
+   across these components, so retheming by editing classes would be 450 chances
+   to miss one and no way to support a second palette. Instead every Tailwind
+   colour slot is remapped once, here, to a CSS variable, and each theme fills
+   those variables in. `@theme inline` is what makes that work: it compiles
+   `.bg-zinc-950` to `var(--t-n-950)` rather than baking in a literal, so the
+   whole app repaints when the attribute flips.
+
+   The one thing to know before reading the values: in the ivory palette every
+   ramp runs *backwards*. These components were written dark-first, so a low
+   number means "text" and a high number means "surface" — `bg-zinc-950
+   text-zinc-100` is page-on-ink. Inverting the ramp keeps every one of those
+   pairings correct in a light theme without touching a single class. So in
+   ivory, zinc-950 is the ivory page and zinc-100 is near-black ink; in slate it
+   reads the conventional way.
+
+   `white` is deliberately NOT remapped: the canvas substrate and the selection
+   handles need literal white in both themes. Headings therefore use `text-ink`,
+   which does flip.
+
+   Fonts are stand-ins. Anthropic sets Styrene and Tiempos, both licensed, so
+   this pairs Space Grotesk (geometric grotesque, display), Inter (dense UI),
+   Source Serif 4 (editorial prose) and IBM Plex Mono (source views). They load
+   from Google Fonts and degrade to the system stack offline.
+   ============================================================================ */
+
+:root {
+  --fam-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --fam-display: "Space Grotesk", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --fam-serif: "Source Serif 4", Charter, "Iowan Old Style", Georgia, ui-serif, serif;
+  --fam-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@theme inline {
+  --font-sans: var(--fam-sans);
+  --font-display: var(--fam-display);
+  --font-serif: var(--fam-serif);
+  --font-mono: var(--fam-mono);
+
+  /* Strongest text colour. Replaces `text-white`, which cannot flip. */
+  --color-ink: var(--t-ink);
+
+  --color-zinc-50: var(--t-n-50);
+  --color-zinc-100: var(--t-n-100);
+  --color-zinc-200: var(--t-n-200);
+  --color-zinc-300: var(--t-n-300);
+  --color-zinc-400: var(--t-n-400);
+  --color-zinc-500: var(--t-n-500);
+  --color-zinc-600: var(--t-n-600);
+  --color-zinc-700: var(--t-n-700);
+  --color-zinc-800: var(--t-n-800);
+  --color-zinc-900: var(--t-n-900);
+  --color-zinc-925: var(--t-n-925);
+  --color-zinc-950: var(--t-n-950);
+
+  /* Clay — Anthropic's signature accent. Occupies the indigo slots (primary). */
+  --color-indigo-100: var(--t-clay-100);
+  --color-indigo-200: var(--t-clay-200);
+  --color-indigo-300: var(--t-clay-300);
+  --color-indigo-400: var(--t-clay-400);
+  --color-indigo-500: var(--t-clay-500);
+  --color-indigo-600: var(--t-clay-600);
+  --color-indigo-700: var(--t-clay-700);
+  --color-indigo-800: var(--t-clay-800);
+  --color-indigo-950: var(--t-clay-950);
+
+  /* Olive — success / "live" states. Occupies the emerald slots. */
+  --color-emerald-100: var(--t-olive-100);
+  --color-emerald-200: var(--t-olive-200);
+  --color-emerald-300: var(--t-olive-300);
+  --color-emerald-400: var(--t-olive-400);
+  --color-emerald-500: var(--t-olive-500);
+  --color-emerald-800: var(--t-olive-800);
+  --color-emerald-900: var(--t-olive-900);
+  --color-emerald-950: var(--t-olive-950);
+
+  /* Kraft — cautions and "read this" callouts. Occupies the amber slots. */
+  --color-amber-100: var(--t-kraft-100);
+  --color-amber-200: var(--t-kraft-200);
+  --color-amber-300: var(--t-kraft-300);
+  --color-amber-400: var(--t-kraft-400);
+  --color-amber-500: var(--t-kraft-500);
+  --color-amber-600: var(--t-kraft-600);
+  --color-amber-700: var(--t-kraft-700);
+  --color-amber-800: var(--t-kraft-800);
+  --color-amber-900: var(--t-kraft-900);
+  --color-amber-950: var(--t-kraft-950);
+
+  /* Brick — failures. Occupies the red slots. */
+  --color-red-200: var(--t-brick-200);
+  --color-red-300: var(--t-brick-300);
+  --color-red-800: var(--t-brick-800);
+  --color-red-900: var(--t-brick-900);
+  --color-red-950: var(--t-brick-950);
+
+  /* Sky — informational. The one cool hue, held to a single muted step. */
+  --color-sky-200: var(--t-sky-200);
+  --color-sky-300: var(--t-sky-300);
+  --color-sky-400: var(--t-sky-400);
+  --color-sky-500: var(--t-sky-500);
+  --color-sky-600: var(--t-sky-600);
+  --color-sky-800: var(--t-sky-800);
+  --color-sky-950: var(--t-sky-950);
+
+  /* Aubergine — the platform verdict chip, kept distinct from clay. */
+  --color-violet-200: var(--t-aub-200);
+  --color-violet-600: var(--t-aub-600);
+  --color-violet-800: var(--t-aub-800);
+  --color-violet-950: var(--t-aub-950);
+}
+
+/* --- ivory: the default. Warm bone page, near-black ink, clay accent. --------
+   Remember the inversion: 950 is the page, 100 is the text. */
+:root,
+[data-theme="ivory"] {
+  color-scheme: light;
+
+  --t-ink: #141413;
+
+  --t-n-50: #0a0a09;
+  --t-n-100: #141413;
+  --t-n-200: #2a2926;
+  --t-n-300: #403e39;
+  --t-n-400: #57544d;
+  /* The muted end is compressed compared to slate, and deliberately so: on a bone
+     page, 10-11 px labels at the tint these steps would "naturally" take land near
+     3:1. Measured against both surfaces (n-950 page and n-925 panels), 500 is
+     5.2:1 and 600 is 4.4:1 — dim enough to recede, dark enough to read. */
+  --t-n-500: #666257;
+  --t-n-600: #726e63;
+  --t-n-700: #c9c5b8;
+  --t-n-800: #dedacc;
+  --t-n-900: #eae7dc;
+  --t-n-925: #f7f5ef;
+  --t-n-950: #f0eee6;
+
+  --t-clay-100: #5a2a16;
+  --t-clay-200: #77361f;
+  --t-clay-300: #94472b;
+  --t-clay-400: #b85c38;
+  --t-clay-500: #d97757;
+  --t-clay-600: #be5f3d;
+  --t-clay-700: #c98a6c;
+  --t-clay-800: #e5bba5;
+  --t-clay-950: #f7e9e1;
+
+  --t-olive-100: #29311e;
+  --t-olive-200: #384428;
+  --t-olive-300: #4a5936;
+  --t-olive-400: #5e7045;
+  --t-olive-500: #788c5d;
+  --t-olive-800: #c4d2af;
+  --t-olive-900: #dce4cb;
+  --t-olive-950: #eef2e6;
+
+  --t-kraft-100: #52331f;
+  --t-kraft-200: #6e452a;
+  --t-kraft-300: #895637;
+  --t-kraft-400: #a26b45;
+  --t-kraft-500: #be8560;
+  --t-kraft-600: #a9704a;
+  --t-kraft-700: #cfa482;
+  --t-kraft-800: #e6cdb2;
+  --t-kraft-900: #f0e0c9;
+  --t-kraft-950: #f9f1e5;
+
+  --t-brick-200: #78291b;
+  --t-brick-300: #963623;
+  --t-brick-800: #ecc4b8;
+  --t-brick-900: #f4dcd3;
+  --t-brick-950: #fbefea;
+
+  --t-sky-200: #1c3a58;
+  --t-sky-300: #295381;
+  --t-sky-400: #3c6d9f;
+  --t-sky-500: #5c9cd6;
+  --t-sky-600: #4680b5;
+  --t-sky-800: #bcd6ed;
+  --t-sky-950: #eaf2fa;
+
+  --t-aub-200: #483544;
+  --t-aub-600: #7c5c74;
+  --t-aub-800: #d8c8d4;
+  --t-aub-950: #f3ecf1;
+}
+
+/* --- slate: the warm dark counterpart. Ramps read conventionally here. ------ */
+[data-theme="slate"] {
+  color-scheme: dark;
+
+  --t-ink: #f7f6f1;
+
+  --t-n-50: #fbfaf7;
+  --t-n-100: #f0eee6;
+  --t-n-200: #e0ddd3;
+  --t-n-300: #c7c3b7;
+  --t-n-400: #a39f94;
+  /* Same compression as ivory, mirrored: measured against n-925 panels (the lighter
+     of the two surfaces, so the harder target) 500 is 5.2:1. 600 stays a step below
+     at ~4:1 — it dresses list markers, borders and the word-count column, never
+     body copy. */
+  --t-n-500: #8f8a80;
+  --t-n-600: #7d776c;
+  --t-n-700: #45423d;
+  --t-n-800: #302d29;
+  --t-n-900: #211f1d;
+  --t-n-925: #191817;
+  --t-n-950: #141413;
+
+  --t-clay-100: #f8dfd4;
+  --t-clay-200: #f1c8b6;
+  --t-clay-300: #e9ac91;
+  --t-clay-400: #e1906e;
+  --t-clay-500: #d97757;
+  --t-clay-600: #be5f3d;
+  --t-clay-700: #9e4a2b;
+  --t-clay-800: #75371f;
+  --t-clay-950: #2c130b;
+
+  --t-olive-100: #e6ebdc;
+  --t-olive-200: #d2ddc2;
+  --t-olive-300: #b6c8a0;
+  --t-olive-400: #9ab07e;
+  --t-olive-500: #788c5d;
+  --t-olive-800: #39442a;
+  --t-olive-900: #29311e;
+  --t-olive-950: #1a2013;
+
+  --t-kraft-100: #f7e8d7;
+  --t-kraft-200: #f0d9bf;
+  --t-kraft-300: #e6c5a3;
+  --t-kraft-400: #dbb28e;
+  --t-kraft-500: #d4a27f;
+  --t-kraft-600: #bc8560;
+  --t-kraft-700: #9a6743;
+  --t-kraft-800: #714a30;
+  --t-kraft-900: #533624;
+  --t-kraft-950: #321f13;
+
+  --t-brick-200: #f3cac1;
+  --t-brick-300: #e9a496;
+  --t-brick-800: #7b2b1d;
+  --t-brick-900: #5b1f15;
+  --t-brick-950: #3a140d;
+
+  --t-sky-200: #cee4f8;
+  --t-sky-300: #aacff2;
+  --t-sky-400: #85b9ea;
+  --t-sky-500: #5c9cd6;
+  --t-sky-600: #4680b5;
+  --t-sky-800: #26486b;
+  --t-sky-950: #11202f;
+
+  --t-aub-200: #e5d4e1;
+  --t-aub-600: #7c5c74;
+  --t-aub-800: #493645;
+  --t-aub-950: #231a21;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+.uim-editor-root:fullscreen {
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+body {
+  background: var(--t-n-950);
+  color: var(--t-n-200);
+  font-family: var(--fam-sans);
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--fam-display);
+  letter-spacing: -0.015em;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--t-n-700);
+  border-radius: 999px;
+  border: 2px solid var(--t-n-950);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::selection {
+  background: var(--t-clay-500);
+  color: #fff;
+}

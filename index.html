@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en" data-theme="ivory">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UIMaster — Claude Code Prompt Pack & Live Engine Playground</title>
+    <!--
+      Stand-ins for Anthropic's licensed pair (Styrene / Tiempos): a geometric
+      grotesque for display, Inter for dense UI, a Times-adjacent serif for
+      prose, and a warm mono for source views. Preconnected because the first
+      paint is otherwise held by the stylesheet request; absent a network the
+      stacks in index.css fall back to system fonts and the layout is unchanged.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    />
+    <script>
+      // Applied before first paint so a slate-theme reload never flashes ivory.
+      try {
+        var t = localStorage.getItem("uim-theme");
+        if (t === "slate" || t === "ivory") document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
