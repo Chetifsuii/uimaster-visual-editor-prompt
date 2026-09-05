@@ -63,9 +63,36 @@ backwards on purpose: the components were written dark-first, so inverting the r
 Typography pairs Space Grotesk (display), Inter (UI), Source Serif 4 (prose) and IBM Plex Mono
 (source views) — open-licensed stand-ins for Anthropic's licensed Styrene and Tiempos.
 
+## Deployment
+
+Live at **https://chetifsuii.github.io/uimaster-visual-editor-prompt/**. The whole app is that one
+`dist/index.html`, so there is nothing to route and no asset URLs for a project subpath to break.
+
+Two deploy paths are committed. Only the first is active.
+
+**`gh-pages` branch — active.** Pages is set to *Deploy from a branch* → `gh-pages` → `/`. The branch
+holds a prebuilt `index.html` and an empty `.nojekyll`, nothing else. To ship a change, rebuild and
+move the branch tip. This writes the built file straight into a commit, so it never touches the
+working tree or the `main` history:
+
+```bash
+npm run typecheck && npm run build
+BLOB=$(git hash-object -w dist/index.html)
+NOJ=$(printf '' | git hash-object -w --stdin)
+TREE=$(printf "100644 blob $NOJ\t.nojekyll\n100644 blob $BLOB\tindex.html\n" | git mktree)
+git push origin "$(git commit-tree $TREE -m 'Publish build')":refs/heads/gh-pages --force
+```
+
+**`.github/workflows/deploy.yml` — dormant.** The Actions route (typecheck → build → upload →
+`deploy-pages`) is correct but never starts: this account's Actions are billing-locked, and the run
+is refused with *"The job was not started because your account is locked due to a billing issue."*
+Settle that under Settings → Billing, then switch the Pages source to **GitHub Actions** and every
+push to `main` publishes itself — at which point the block above is no longer needed.
+
 ## Stack
 
 React 19 · TypeScript (strict) · Tailwind 4 · Vite 7 · `vite-plugin-singlefile`, so `npm run build`
 emits one self-contained `dist/index.html`.
 
-There is no test runner; `npm run typecheck` is the gate, and CI runs it before every deploy.
+There is no test runner; `npm run typecheck` is the gate. The deploy workflow runs it before
+building — see Deployment for why that workflow is currently idle.
