@@ -33,20 +33,42 @@ Three ways in, on the playground's source tabs:
 - **Template link** — paste a published Framer or Webflow address. The app identifies the builder
   from the markup (not the hostname, so a Framer site on a custom domain still resolves correctly)
   and warns when the address is a marketplace listing or a signed builder preview rather than a
-  served page.
+  served page. Needs a relay — see below.
 - **Paste source** — <kbd>Ctrl</kbd>+<kbd>U</kbd> on the template, paste the whole document.
 - **Fixtures** — two bundled sample documents, one Framer-shaped and one Webflow-shaped.
 
-### Template link needs the dev server
+### Template link needs a relay
 
 Publishers do not send `Access-Control-Allow-Origin` for documents, so a page-context fetch of a
-template is blocked by CORS. The fix is a small **dev-only** relay in `vite.config.ts` that makes the
-request server-side with browser-equivalent headers — GET only, public hosts only, no CORS header of
-its own, response served as inert `text/plain`. It is declared `apply: "serve"`, so it never reaches
-a production bundle.
+template is blocked by CORS. Verified rather than assumed: a request to `https://www.xhulia.com/`
+carrying an `Origin` header comes back `200` from `Server: Framer/…` with no `access-control-*` header
+at all. Nothing in the browser can read that response, which is why the fetch has to happen
+somewhere else.
 
-On the deployed build there is no server, so **Template link cannot fetch** and the app says so in
-its error text. Paste source and Fixtures work fully. To exercise link import, run it locally.
+So the link tab has a **relay endpoint** setting — any URL that answers `?url=` with the page body.
+Two are provided:
+
+- **`vite.config.ts`, in dev.** `/__uim/fetch`, the field's default under `npm run dev`. GET only,
+  public hosts only, no CORS header of its own, response served as inert `text/plain`, and declared
+  `apply: "serve"` so it never reaches a production bundle.
+- **`relay/worker.js`, for the deployed build.** The same contract as a Cloudflare Worker, with an
+  origin allowlist and `Access-Control-Expose-Headers` so the app can still read `x-uim-final-url`:
+
+  ```bash
+  npx wrangler deploy relay/worker.js --name uim-relay --compatibility-date 2026-01-01
+  ```
+
+  Paste the resulting `…workers.dev` URL into **Relay endpoint** on the link tab. It is remembered in
+  `localStorage`, so this is configuration, not a rebuild.
+
+With no relay configured — the state a fresh static deploy is in — the link tab says so up front and
+the failure names the reason instead of suggesting a retry. Paste source and Fixtures are unaffected.
+
+A relay response is only trusted when it carries `x-uim-final-url`. That check is not ceremony: a
+static host answering the relay path with its own 404, or with this app via an SPA fallback, produces
+something that otherwise looks like a fetched document — and in the SPA case the app would cheerfully
+open *itself* in the editor as the imported template. `index.html` carries `data-uim-app` so that
+case is caught by name.
 
 ## Theme
 

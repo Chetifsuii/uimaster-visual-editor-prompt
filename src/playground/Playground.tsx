@@ -1,8 +1,8 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeftRight, ClipboardPaste, Download, FileCode2, Globe, Loader2, Snowflake, Sparkles, TriangleAlert, Wand2 } from "lucide-react";
 import { fixtures } from "@/content";
 import { freeze, type FreezeReport, type FreezeResult } from "./engine";
-import { guessPlatformFromUrl, importFromUrl, isWrongKindOfAddress, KIND_SUFFIX, type ImportResult } from "./importer";
+import { guessPlatformFromUrl, importFromUrl, isWrongKindOfAddress, KIND_SUFFIX, RELAY_PATH, type ImportResult } from "./importer";
 import { compareFrozen, type CompareResult } from "./compare";
 import { Btn, Chip, Segmented, inputCls } from "./ui";
 import { Editor } from "./Editor";
@@ -31,6 +31,23 @@ const PRESETS: { label: string; url: string; platform: "framer" | "webflow" }[] 
 
 const PLATFORM_LABEL = { framer: "Framer", webflow: "Webflow", unknown: "unrecognized builder" } as const;
 
+/**
+ * Whether a relay is reachable is a property of the deployment, not of the code, so it is a setting
+ * rather than a constant. `import.meta.env.DEV` is true only under `vite dev`, where the middleware in
+ * vite.config.ts is mounted; a built bundle starts with nothing and says so, and stays useful the
+ * moment a relay is pointed at it — no rebuild, because the value lives in localStorage.
+ */
+const RELAY_STORAGE_KEY = "uim-relay-endpoint";
+const RELAY_DEFAULT = import.meta.env.DEV ? RELAY_PATH : "";
+
+function storedRelay(): string {
+  try {
+    return localStorage.getItem(RELAY_STORAGE_KEY) ?? RELAY_DEFAULT;
+  } catch {
+    return RELAY_DEFAULT;
+  }
+}
+
 const VERDICT_TONE = { identical: "green", equivalent: "green", divergent: "red" } as const;
 const VERDICT_TEXT = {
   identical: "Byte-for-byte identical sources",
@@ -44,6 +61,7 @@ export function Playground() {
   const [origin, setOrigin] = useState("nothing loaded");
   const [baseUrl, setBaseUrl] = useState("");
   const [siteUrl, setSiteUrl] = useState("https://midu.design/");
+  const [relayUrl, setRelayUrl] = useState(storedRelay);
   const [importing, setImporting] = useState(false);
   const [imported, setImported] = useState<ImportResult | null>(null);
   const [frozen, setFrozen] = useState<FreezeResult | null>(null);
@@ -56,6 +74,14 @@ export function Playground() {
 
   const kb = useMemo(() => (new Blob([raw]).size / 1024).toFixed(1), [raw]);
   const guess = useMemo(() => guessPlatformFromUrl(siteUrl), [siteUrl]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(RELAY_STORAGE_KEY, relayUrl);
+    } catch {
+      // Storage denial only costs the setting its memory between reloads; the import still works now.
+    }
+  }, [relayUrl]);
   /** A pasted address in the source box is a link, not a document — offer the right tab instead of failing. */
   const pastedLooksLikeUrl = useMemo(() => {
     const t = raw.trim();
@@ -91,7 +117,7 @@ export function Playground() {
       setError(null);
       setImporting(true);
       try {
-        const result = await importFromUrl(siteUrl);
+        const result = await importFromUrl(siteUrl, { relayUrl });
         setRaw(result.html);
         setOrigin(`${result.finalUrl} · ${result.channel} channel`);
         setBaseUrl(result.finalUrl);
@@ -108,7 +134,7 @@ export function Playground() {
         setImporting(false);
       }
     },
-    [siteUrl],
+    [siteUrl, relayUrl],
   );
 
   const capture = (which: "A" | "B") => {
@@ -290,8 +316,43 @@ export function Playground() {
                   <Globe size={13} className="shrink-0" /> Use <code className="font-mono">{guess.livePreview}</code> instead — the usual published address for this template (a guess from the slug, not a lookup).
                 </button>
               ) : null}
-              <p className="text-[11.5px] leading-5 text-zinc-500">
-                A page-context <code className="text-zinc-300">fetch</code> is tried first; publishers do not send CORS headers for documents, so it normally falls through to the dev server's <code className="text-zinc-300">/__uim/fetch</code> relay, which requests the page with browser-equivalent headers. That relay is the only network call in the product and it only replaces the paste — freeze, sense, edit and export still run entirely in this tab.
+              {relayUrl ? (
+                <p className="text-[11.5px] leading-5 text-zinc-500">
+                  A page-context <code className="text-zinc-300">fetch</code> is tried first; publishers do not send CORS headers for documents, so it normally falls through to the relay at{" "}
+                  <code className="text-zinc-300">{relayUrl}</code>, which requests the page with browser-equivalent headers. That relay is the only network call in the product and it only replaces the paste — freeze, sense, edit and export still run entirely in this tab.
+                </p>
+              ) : (
+                <div className="rounded-lg border border-amber-600/50 bg-amber-500/10 p-3 text-[11.5px] leading-5 text-amber-200">
+                  <div className="flex items-start gap-1.5">
+                    <TriangleAlert size={13} className="mt-0.5 shrink-0" />
+                    <div>
+                      <span className="font-medium">This build cannot fetch a link.</span> A page-context <code className="font-mono">fetch</code> of someone else's page is blocked by CORS — Framer and Webflow send no{" "}
+                      <code className="font-mono">Access-Control-Allow-Origin</code> for documents — and there is no server here to do it instead. That is a property of static hosting, not a bug to retry.{" "}
+                      <span className="text-amber-100">Paste source</span> and <span className="text-amber-100">Fixtures</span> work fully; they were never going to differ, which is what the compare card exists to show.
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <label htmlFor="uim-relay" className="text-[11px] whitespace-nowrap text-zinc-500">
+                  Relay endpoint
+                </label>
+                <input
+                  id="uim-relay"
+                  value={relayUrl}
+                  onChange={(e) => setRelayUrl(e.target.value.trim())}
+                  placeholder={`${RELAY_PATH} in dev, or https://your-relay.workers.dev/fetch`}
+                  className={`${inputCls} min-w-0 flex-1 font-mono text-[11px]`}
+                />
+                {relayUrl !== RELAY_DEFAULT ? (
+                  <button type="button" onClick={() => setRelayUrl(RELAY_DEFAULT)} className="text-[11px] text-zinc-500 underline decoration-dotted hover:text-zinc-300">
+                    reset
+                  </button>
+                ) : null}
+              </div>
+              <p className="text-[11px] leading-4 text-zinc-600">
+                Remembered in this browser. Any endpoint that answers <code className="font-mono">?url=</code> with the page body works; see <code className="font-mono">relay/worker.js</code> in the repo for a
+                deployable one. Requests still leave your browser only for the address you type.
               </p>
               {imported ? (
                 <div className="space-y-1 rounded-lg border border-zinc-800 bg-zinc-925 p-3 text-[12px]">

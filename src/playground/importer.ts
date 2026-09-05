@@ -7,12 +7,14 @@
  * So two channels are tried in order and the one that served the bytes is reported:
  *
  *   1. `direct`  — page-context fetch. Zero infrastructure, works only for permissive origins.
- *   2. `relay`   — the dev server's `/__uim/fetch` middleware performs the request server-side with
- *                  browser-equivalent headers. Same origin as the app, so no CORS involved.
+ *   2. `relay`   — an HTTP endpoint that performs the request server-side with browser-equivalent
+ *                  headers, so no CORS is involved. In dev that is the Vite middleware at
+ *                  `/__uim/fetch`; in a built bundle it is whatever endpoint the user configures,
+ *                  and if none is configured this channel reports that rather than guessing.
  *
- * This is the one place in the product that touches the network, and it exists only to obtain the
- * source the user would otherwise paste. Everything after it (FREEZE → MAP → SENSE → PATCH →
- * EXPORT) still runs entirely in the tab.
+ * The relay is addressed by URL rather than by a hard-coded path because the two deployments differ:
+ * the dev server owns its own origin, a static host has no server at all. Nothing else about the
+ * pipeline changes — FREEZE → MAP → SENSE → PATCH → EXPORT still runs entirely in the tab.
  */
 
 export type ImportChannel = "direct" | "relay";
@@ -151,7 +153,21 @@ export function detectPlatformFromHtml(html: string): { platform: Platform; evid
   return { platform: "unknown", evidence: "no Framer or Webflow signature found — imported as generic HTML" };
 }
 
+/** Where the dev server mounts the relay. Also the default the app offers when it is running in dev. */
 export const RELAY_PATH = "/__uim/fetch";
+
+/**
+ * The header a genuine relay must return. It exists as a contract, not just as data: a static host
+ * answering the relay path with its own 404 page — or with this app, via an SPA fallback — produces a
+ * response that otherwise looks fetchable. Requiring a header the host cannot know about is what
+ * separates "the relay answered" from "something answered".
+ *
+ * A cross-origin relay must also list it in `Access-Control-Expose-Headers`, or the browser hides it.
+ */
+export const RELAY_FINAL_URL_HEADER = "x-uim-final-url";
+
+/** Marks this app's own document (see index.html), so an SPA fallback cannot be imported as a template. */
+const APP_DOCUMENT_MARKER = /<html[^>]*\sdata-uim-app=/i;
 
 /** Browser-equivalent request headers — what makes a relayed fetch return the same SSR output as Ctrl+U. */
 export const BROWSER_HEADERS: Record<string, string> = {
@@ -237,25 +253,57 @@ async function tryDirect(url: string, fetchImpl: typeof fetch): Promise<ChannelR
   }
 }
 
-async function tryRelay(url: string, fetchImpl: typeof fetch): Promise<ChannelResult | ImportAttempt> {
+/** Append `?url=` / `&url=` correctly, so a relay endpoint may carry query params of its own. */
+function relayRequestUrl(relayUrl: string, target: string): string {
+  return `${relayUrl}${relayUrl.includes("?") ? "&" : "?"}url=${encodeURIComponent(target)}`;
+}
+
+async function tryRelay(url: string, fetchImpl: typeof fetch, relayUrl: string): Promise<ChannelResult | ImportAttempt> {
   const t0 = performance.now();
+  if (!relayUrl) {
+    return {
+      channel: "relay",
+      ok: false,
+      status: null,
+      detail: "no relay endpoint configured — a static host has no server to fetch the page for you",
+      ms: ms(t0),
+    };
+  }
   try {
-    const res = await fetchImpl(`${RELAY_PATH}?url=${encodeURIComponent(url)}`, { credentials: "omit" });
+    const res = await fetchImpl(relayRequestUrl(relayUrl, url), { credentials: "omit" });
     const html = await res.text();
+    const isRelay = res.headers.has(RELAY_FINAL_URL_HEADER);
+
     if (!res.ok) {
-      const detail = html.slice(0, 300) || `${res.status} ${res.statusText}`;
+      // The dev relay reports failures as short text/plain sentences, which are worth showing. A web
+      // page here means nothing is listening at the path, so say that instead of pasting its markup.
+      const detail = looksLikeHtmlDocument(html)
+        ? `${res.status} — that endpoint served a web page, not a relay response, so nothing is relaying there`
+        : html.trim().slice(0, 300) || `${res.status} ${res.statusText}`;
       return { channel: "relay", ok: false, status: res.status, detail, ms: ms(t0) };
     }
+    if (!isRelay && APP_DOCUMENT_MARKER.test(html)) {
+      return {
+        channel: "relay",
+        ok: false,
+        status: res.status,
+        detail: "that endpoint served this app back — a static host's fallback, not a relay",
+        ms: ms(t0),
+      };
+    }
+
     const upstream = Number(res.headers.get("x-uim-upstream-status") ?? "0");
     return {
       html,
       bytes: new Blob([html]).size,
       requestedUrl: url,
-      finalUrl: res.headers.get("x-uim-final-url") || url,
+      finalUrl: res.headers.get(RELAY_FINAL_URL_HEADER) || url,
       channel: "relay",
       contentType: res.headers.get("x-uim-upstream-content-type") ?? "",
       attempts: [{ channel: "relay", ok: true, status: upstream || res.status, detail: `upstream ${upstream || res.status}`, ms: ms(t0) }],
-      notes: [],
+      notes: isRelay
+        ? []
+        : [`The relay did not send ${RELAY_FINAL_URL_HEADER}, so redirects could not be followed for the asset base. A cross-origin relay has to list that header in Access-Control-Expose-Headers.`],
     };
   } catch (e) {
     return { channel: "relay", ok: false, status: null, detail: e instanceof Error ? e.message : String(e), ms: ms(t0) };
@@ -266,17 +314,28 @@ function isResult(v: ChannelResult | ImportAttempt): v is ChannelResult {
   return "html" in v;
 }
 
-export async function importFromUrl(input: string, fetchImpl: typeof fetch = fetch): Promise<ImportResult> {
+export interface ImportOptions {
+  /**
+   * Endpoint that performs the fetch server-side. `/__uim/fetch` while the dev server is running;
+   * an absolute URL for a relay hosted elsewhere; empty string to skip the channel and say why.
+   */
+  relayUrl?: string;
+  fetchImpl?: typeof fetch;
+}
+
+export async function importFromUrl(input: string, options: ImportOptions = {}): Promise<ImportResult> {
+  const { relayUrl = "", fetchImpl = fetch } = options;
   const url = normalizeSiteUrl(input);
   const guess = guessPlatformFromUrl(url);
   const attempts: ImportAttempt[] = [];
 
-  for (const run of [tryDirect, tryRelay]) {
-    const out = await run(url, fetchImpl);
+  const channels = [(u: string) => tryDirect(u, fetchImpl), (u: string) => tryRelay(u, fetchImpl, relayUrl)];
+  for (const run of channels) {
+    const out = await run(url);
     if (isResult(out)) {
-      const notes: string[] = [];
+      const notes = [...out.notes];
       if (out.channel === "relay") {
-        notes.push("Served by the dev-server relay: the browser cannot read a cross-origin document response, so the request was made server-side with browser-equivalent headers.");
+        notes.unshift("Served by the relay: the browser cannot read a cross-origin document response, so the request was made server-side with browser-equivalent headers.");
       }
       if (attempts.length > 0) notes.push(`Direct fetch failed first (${attempts[0]?.detail ?? "unknown"}).`);
       if (out.finalUrl !== out.requestedUrl) notes.push(`Redirected to ${out.finalUrl} — that URL is used as the asset base.`);
@@ -293,7 +352,11 @@ export async function importFromUrl(input: string, fetchImpl: typeof fetch = fet
   }
 
   const lines = attempts.map((a) => `${a.channel}: ${a.detail}`).join(" · ");
-  throw new Error(
-    `Could not fetch ${url}. ${lines}.${guess.hint ? ` ${guess.hint}` : ""} The relay only exists while the dev server is running; in a built single-file bundle use Ctrl+U and paste.`,
-  );
+  // Two different failures wear the same error, so name which one this is. Without a relay the
+  // outcome is structural — no amount of retrying makes a browser able to read a cross-origin
+  // document — and the honest advice is Ctrl+U, not "try again".
+  const remedy = relayUrl
+    ? "Check that the relay endpoint is reachable and allows this origin, or use Paste source with the Ctrl+U output."
+    : "This build has no relay, and a browser cannot read a cross-origin document on its own — so nothing here can fetch that page. Use Paste source with the Ctrl+U output, or set a relay endpoint on the link tab.";
+  throw new Error(`Could not fetch ${url}. ${lines}.${guess.hint ? ` ${guess.hint}` : ""} ${remedy}`);
 }
